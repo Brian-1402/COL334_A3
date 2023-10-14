@@ -27,6 +27,9 @@ class ReliableUDP:
         self.team = team
         self.hash = ""
 
+    def __del__(self):
+        self.s.close()
+
     def send(self, message):
         self.s.sendto(message.encode(), ("127.0.0.1", 9801))
         # self.s.sendto(message.encode(), self.send_addr)
