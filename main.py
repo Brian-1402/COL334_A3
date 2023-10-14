@@ -7,15 +7,19 @@ class ReliableUDP:
         send_addr,
         entryID,
         team,
-        recv_addr=(socket.gethostbyname_ex(socket.gethostname())[2][-1], 0),
+        recv_addr=None,
         timeout=2,
     ):
-        self.recv_addr, self.send_addr = recv_addr, send_addr
+        self.send_addr = send_addr
+        if not recv_addr:
+            self.recv_addr = (socket.gethostbyname_ex(socket.gethostname())[2][-1], 0)
+        else:
+            self.recv_addr = recv_addr
         self.timeout = timeout
         self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         print(recv_addr)
         print(send_addr)
-        self.s.bind(recv_addr)
+        self.s.bind(self.recv_addr)
         self.s.settimeout(timeout)
 
         self.psize = 1448
@@ -31,17 +35,17 @@ class ReliableUDP:
         self.s.close()
 
     def send(self, message):
-        self.s.sendto(message.encode(), ("127.0.0.1", 9801))
-        # self.s.sendto(message.encode(), self.send_addr)
+        # self.s.sendto(message.encode(),("127.0.0.1",9801))
+        self.s.sendto(message.encode(), self.send_addr)
 
     def recv(self):
-        try:
-            reply, addr = self.s.recvfrom(2048)
-            if addr != self.recv_addr[0]:
-                raise RuntimeError("Wrong server IP")
-            return reply.decode()
-        except socket.timeout:
-            raise TimeoutError("Timed out")
+        # try:
+        reply, addr = self.s.recvfrom(2048)
+        if addr != self.send_addr:
+            raise RuntimeError("Wrong server IP")
+        return reply.decode()
+        # except socket.timeout:
+        #     raise TimeoutError("Timed out")
 
     def get_retry(self, message, tries=5):
         self.send(message)
@@ -50,7 +54,7 @@ class ReliableUDP:
         while count < tries:
             try:
                 reply, addr = self.s.recvfrom(2048)
-                if addr != self.recv_addr[0]:
+                if addr != self.send_addr:
                     continue
                 break
             except socket.timeout:
@@ -97,5 +101,16 @@ class ReliableUDP:
             print("Submission Failed")
 
 
-udp = ReliableUDP(("127.0.0.1", 9804), None, None)
+
+# test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+# test_sock.bind(("127.0.0.1",9804))
+# test_sock.sendto("SendSize\nReset\n\n".encode(),("127.0.0.1",9801))
+# result = test_sock.recvfrom(2048)
+# print(result)
+udp = ReliableUDP(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
 udp.getsize()
+udp.send("Offset: 0\nNumBytes: 1448\n\n")
+# time.sleep(5)
+udp.send("Offset: 1448\nNumBytes: 1448\n\n")
+print(udp.recv())
+print(udp.recv())
