@@ -16,10 +16,10 @@ print(socket.gethostbyname_ex(host))
 
 
 def send(s, message):
-    s.sendto(message, (UDP_IP_RECEIVER, UDP_PORT_RECEIVER))
+    s.sendto(message.encode(), (UDP_IP_RECEIVER, UDP_PORT_RECEIVER))
 
 
-def send_retry(s, message, tries=5):
+def get_retry(s, message, tries=5):
     s.sendto(message.encode(), (UDP_IP_RECEIVER, UDP_PORT_RECEIVER))
     count = 0
     while count < tries:
@@ -43,7 +43,7 @@ def catch_burst(s):
     count = 0
     while count < 5:
         try:
-            data, addr = sock.recvfrom(2048)
+            data, addr = s.recvfrom(2048)
             print(data.decode())
             count += 1
         except socket.timeout:
