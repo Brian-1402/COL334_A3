@@ -101,7 +101,6 @@ class ReliableUDP:
             print("Submission Failed")
 
 
-
 # test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # test_sock.bind(("127.0.0.1",9804))
 # test_sock.sendto("SendSize\nReset\n\n".encode(),("127.0.0.1",9801))
@@ -109,8 +108,8 @@ class ReliableUDP:
 # print(result)
 udp = ReliableUDP(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
 udp.getsize()
+time.sleep(5)
 udp.send("Offset: 0\nNumBytes: 1448\n\n")
-# time.sleep(5)
 udp.send("Offset: 1448\nNumBytes: 1448\n\n")
 print(udp.recv())
 print(udp.recv())
