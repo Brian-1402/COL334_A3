@@ -1,4 +1,4 @@
-import socket, time, datetime, hashlib, math
+import socket, time, datetime, hashlib, math, threading
 from matplotlib import pyplot as plt
 
 
@@ -74,7 +74,7 @@ class UDPStream:
         entryID,
         team,
         recv_addr=None,
-        timeout=2,
+        timeout=5,
     ):
         self.udp = ReliableUDP(send_addr, recv_addr, timeout)
         self.s = self.udp.s
@@ -105,6 +105,9 @@ class UDPStream:
         result = hashlib.md5(output_data.encode())
         self.hash = result.hexdigest()
 
+    def parse(self, message):
+        pass
+
     def submit(self):
         message = f"Submit: {self.entryID}@{self.team}\nMD5: {self.hash}\n\n"
         output = (self.udp.get(message)).split()
@@ -114,6 +117,61 @@ class UDPStream:
             )
         else:
             print("Submission Failed")
+
+    def send_thread(self):
+        self.stop = False
+        i = 0
+        passes = 0
+        while not self.stop:
+            if not self.data[i]:
+                numbytes = self.psize
+                if i == len(self.data) - 1:
+                    numbytes = self.size % self.psize
+                message = f"Offset: {self.psize*i}\nNumbytes: {numbytes}\n\n"
+
+                time.sleep(0.01)
+                print(f"Sending {i}")
+                self.udp.send(message)
+
+            if i == len(self.data) - 1:
+                if None not in self.data or passes > 1:
+                    self.stop = True
+                    break
+
+                i = 0
+                passes += 1
+                continue
+
+            i += 1
+
+    def recv_thread(self):
+        self.s.settimeout(2)
+        self.stop = False
+        count = 0
+        while not self.stop:
+            if count > len(self.data):
+                if None not in self.data:
+                    self.stop = True
+                    break
+            try:
+                response = self.udp.recv()
+            except socket.timeout:
+                self.stop = True
+                break
+            d = self.parse(response)
+            print(f"Received {d['Offset']//self.psize}")
+            if d["NumBytes"] != len(d["Data"]):
+                continue
+            self.data[d["Offset"] // self.psize] = d["Data"]
+            count += 1
+
+    def bi_stream(self):
+        st = threading.Thread(target=self.send_thread, daemon=True)
+        rt = threading.Thread(target=self.recv_thread, daemon=True)
+        self.udp.flush_buffer()
+        st.start()
+        rt.start()
+        st.join()
 
 
 def test_flush():
@@ -128,8 +186,18 @@ def test_flush():
     print(stream.udp.recv())
 
 
+def test_bi_stream():
+    stream = UDPStream(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
+    stream.getsize()
+    stream.bi_stream()
+    stream.submit()
+
+
 def main():
-    pass
+    try:
+        test_bi_stream()
+    except:
+        pass
 
 
 if __name__ == "__main__":
