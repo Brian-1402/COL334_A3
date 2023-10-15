@@ -98,6 +98,17 @@ class UDPStream:
             self.data = [None] * math.ceil(self.size / self.psize)
             print(f"Response: \n{response}")
 
+    def parse(self,message):
+        '''parses message to produce a dictionary with offset, numbytes (and data). 
+        Note - message is pre-decoded'''
+        parse_dict = {}
+        message_list = message.split("\n")
+        parse_dict["Offset"] = int((message_list[0].split())[1])
+        parse_dict["NumBytes"] = int((message_list[1].split())[1])
+        if len(message_list)>3:
+            parse_dict["Data"] = "\n".join(message_list[3:])
+        return parse_dict
+
     def produce_hash(self):
         """generates and returns hash of data.
         Uses hashlib.md5 and result.hexdigest()"""
@@ -127,8 +138,18 @@ def test_flush():
     stream.udp.send("Offset: 1448\nNumBytes: 1448\n\n")
     print(stream.udp.recv())
 
+def test_parse():
+    stream = UDPStream(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
+    stream.getsize()
+    time.sleep(1)
+    stream.udp.send("Offset: 1448\nNumBytes: 1448\n\n")
+    message = stream.udp.recv()
+    print(stream.parse(message))
+    print(stream.parse(message)["Data"])
+    print(len(stream.parse(message)["Data"]))
 
 def main():
+    test_parse()
     pass
 
 
