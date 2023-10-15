@@ -41,7 +41,11 @@ while ind < len(data) and data_count < total_data_count:
     dat = data[ind]
     if dat == None:
         time.sleep(0.01)
-        s.sendto(f"Offset: {1448*ind}\nNumBytes: 1448\n\n".encode(),(UDP_IP_RECEIVER, UDP_PORT_RECEIVER))
+        if ind != total_data_count -1:
+            s.sendto(f"Offset: {1448*ind}\nNumBytes: 1448\n\n".encode(),(UDP_IP_RECEIVER, UDP_PORT_RECEIVER))
+        else:
+            s.sendto(f"Offset: {1448*ind}\nNumBytes: {data_size%1448}\n\n".encode(),(UDP_IP_RECEIVER, UDP_PORT_RECEIVER))
+
     if ind == total_data_count-1:
         ind = 0
     else:
@@ -83,7 +87,7 @@ s.sendto(message.encode(),(UDP_IP_RECEIVER, UDP_PORT_RECEIVER))
 time.sleep(1)
 output = s.recvfrom(2048)
 print(output)
-output = (output[0]).split()
+output = (output[0].decode()).split()
 if output[1] == "true":
     print(
         f"Submission Success\nTotal time taken: {output[3]}\nPenalty occured: {output[5]}"
