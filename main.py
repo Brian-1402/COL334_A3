@@ -12,6 +12,7 @@ class ReliableUDP:
         self.send_addr = send_addr
         if not recv_addr:
             self.recv_addr = (socket.gethostbyname_ex(socket.gethostname())[2][-1], 0)
+            # self.recv_addr = ("0.0.0.0", 0)
         else:
             self.recv_addr = recv_addr
         self.timeout = timeout
@@ -26,13 +27,10 @@ class ReliableUDP:
         self.s.sendto(message.encode(), self.send_addr)
 
     def recv(self):
-        # try:
         reply, addr = self.s.recvfrom(2048)
         if addr != self.send_addr:
             raise RuntimeError("Wrong server IP")
         return reply.decode()
-        # except socket.timeout:
-        #     raise TimeoutError("Timed out")
 
     def get(self, message, tries=5):
         self.flush_buffer()
@@ -49,22 +47,23 @@ class ReliableUDP:
                 print("Timed out, retrying")
                 count += 1
         else:
-            # print("Failed to connect.")
             raise ConnectionError("Failed to connect")
-            return
         return reply
 
     def flush_buffer(self):
         """Should be called after ample time is given,
         for expected leftover requests to pile up and be flushed"""
         self.s.setblocking(False)
+        flushed = 0
         while True:
             try:
                 d = self.s.recvfrom(2048)
+                flushed += 1
                 print("Flushed once")
             except BlockingIOError:
-                print("All flushed!\n")
                 break
+        if flushed:
+            print(f"Flushed {flushed} packets\n")
         self.s.settimeout(self.timeout)
 
 
@@ -89,13 +88,15 @@ class UDPStream:
         self.team = team
         self.hash = ""
 
+    def __del__(self):
+        del self.udp
+
     def getsize(self):
         response = self.udp.get("SendSize\nReset\n\n")
         if response:
             self.size = int(response.split()[1])
             self.data = [None] * math.ceil(self.size / self.psize)
             print(f"Response: \n{response}")
-            # CHECK here
 
     def produce_hash(self):
         """generates and returns hash of data.
@@ -115,7 +116,7 @@ class UDPStream:
             print("Submission Failed")
 
 
-def main():
+def test_flush():
     stream = UDPStream(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
     stream.getsize()
     time.sleep(1)
@@ -125,6 +126,10 @@ def main():
     stream.udp.flush_buffer()
     stream.udp.send("Offset: 1448\nNumBytes: 1448\n\n")
     print(stream.udp.recv())
+
+
+def main():
+    pass
 
 
 if __name__ == "__main__":
