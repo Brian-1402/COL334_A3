@@ -1,6 +1,8 @@
 import socket, time, datetime, hashlib, math, threading
 from matplotlib import pyplot as plt
 
+now = datetime.datetime.now
+
 
 class ReliableUDP:
     def __init__(
@@ -48,7 +50,7 @@ class ReliableUDP:
                 count += 1
         else:
             raise ConnectionError("Failed to connect")
-        return reply
+        return reply.decode()
 
     def flush_buffer(self):
         """Should be called after ample time is given,
@@ -77,6 +79,7 @@ class UDPStream:
         timeout=5,
     ):
         self.udp = ReliableUDP(send_addr, recv_addr, timeout)
+        # self.udp_s = ReliableUDP(send_addr, ("0.0.0.0", 0), timeout)
         self.s = self.udp.s
 
         self.psize = 1448
@@ -87,6 +90,12 @@ class UDPStream:
         self.entryID = entryID
         self.team = team
         self.hash = ""
+
+        self.send_hist = []
+        self.recv_hist = []
+        self.send_time_hist = []
+        self.recv_time_hist = []
+        self.start_time = 0
 
     def __del__(self):
         del self.udp
@@ -117,11 +126,15 @@ class UDPStream:
         self.hash = result.hexdigest()
 
     def submit(self):
+        self.produce_hash()
+        time.sleep(0.1)
         message = f"Submit: {self.entryID}@{self.team}\nMD5: {self.hash}\n\n"
-        output = (self.udp.get(message)).split()
+        output = self.udp.get(message)
+        # print("Submitted, output:\n\n", output)
+        output = output.split()
         if output[1] == "true":
             print(
-                f"Submission Success\nTotal time taken: {output[3]}\nPenalty occured: {output[5]}"
+                f"\n\nSubmission Success\nTotal time taken: {output[3]}\nPenalty occured: {output[5]}"
             )
         else:
             print("Submission Failed")
@@ -135,14 +148,16 @@ class UDPStream:
                 numbytes = self.psize
                 if i == len(self.data) - 1:
                     numbytes = self.size % self.psize
-                message = f"Offset: {self.psize*i}\nNumbytes: {numbytes}\n\n"
+                message = f"Offset: {self.psize*i}\nNumBytes: {numbytes}\n\n"
 
-                time.sleep(0.01)
+                time.sleep(0.001)
                 print(f"Sending {i}")
+                self.send_time_hist.append(time.time() - self.start_time)
+                self.send_hist.append(self.psize * i)
                 self.udp.send(message)
 
             if i == len(self.data) - 1:
-                if None not in self.data or passes > 1:
+                if None not in self.data:
                     self.stop = True
                     break
 
@@ -153,7 +168,8 @@ class UDPStream:
             i += 1
 
     def recv_thread(self):
-        self.s.settimeout(2)
+        # self.s.settimeout(2)
+        # self.s.setblocking(False)
         self.stop = False
         count = 0
         while not self.stop:
@@ -163,13 +179,19 @@ class UDPStream:
                     break
             try:
                 response = self.udp.recv()
-            except socket.timeout:
-                self.stop = True
-                break
+            except Exception as e:
+                if Exception == socket.timeout:
+                    self.stop = True
+                    break
+                else:
+                    continue
             d = self.parse(response)
             print(f"Received {d['Offset']//self.psize}")
             if d["NumBytes"] != len(d["Data"]):
                 continue
+
+            self.recv_time_hist.append(time.time() - self.start_time)
+            self.recv_hist.append(d["Offset"])
             self.data[d["Offset"] // self.psize] = d["Data"]
             count += 1
 
@@ -177,46 +199,43 @@ class UDPStream:
         st = threading.Thread(target=self.send_thread, daemon=True)
         rt = threading.Thread(target=self.recv_thread, daemon=True)
         self.udp.flush_buffer()
+        self.start_time = time.time()
         st.start()
         rt.start()
         st.join()
+        rt.join()
 
 
-def test_flush():
-    stream = UDPStream(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
-    stream.getsize()
-    time.sleep(1)
-    stream.udp.send("Offset: 0\nNumBytes: 1448\n\n")
-    stream.udp.send("Offset: 1448\nNumBytes: 1448\n\n")
-    time.sleep(0.1)
-    stream.udp.flush_buffer()
-    stream.udp.send("Offset: 1448\nNumBytes: 1448\n\n")
-    print(stream.udp.recv())
-
-
-def test_parse():
-    stream = UDPStream(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
-    stream.getsize()
-    time.sleep(1)
-    stream.udp.send("Offset: 1448\nNumBytes: 1448\n\n")
-    message = stream.udp.recv()
-    print(stream.parse(message))
-    print(stream.parse(message)["Data"])
-    print(len(stream.parse(message)["Data"]))
-
-
-def test_bi_stream():
-    stream = UDPStream(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
+def execute_bi_stream():
+    stream = UDPStream(("127.0.0.1", 9801), "2021CS50609", "Team", ("127.0.0.1", 9803))
     stream.getsize()
     stream.bi_stream()
     stream.submit()
+    plt.scatter(
+        stream.send_time_hist,
+        stream.send_hist,
+        label="Sending history",
+        color="b",
+        zorder=1,
+    )
+    plt.scatter(
+        stream.recv_time_hist,
+        stream.recv_hist,
+        label="Receiving history",
+        color="orange",
+        zorder=0,
+    )
+    plt.legend(loc="best")
+    plt.xlabel("time")
+    plt.ylabel("offset")
+    plt.show()
 
 
 def main():
-    try:
-        test_bi_stream()
-    except:
-        pass
+    # try:
+    execute_bi_stream()
+    # except Exception as e:
+    #     print(e)
 
 
 if __name__ == "__main__":
