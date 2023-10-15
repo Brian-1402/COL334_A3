@@ -1,12 +1,11 @@
-import socket, time, datetime, hashlib
+import socket, time, datetime, hashlib, math
+from matplotlib import pyplot as plt
 
 
 class ReliableUDP:
     def __init__(
         self,
         send_addr,
-        entryID,
-        team,
         recv_addr=None,
         timeout=2,
     ):
@@ -17,25 +16,13 @@ class ReliableUDP:
             self.recv_addr = recv_addr
         self.timeout = timeout
         self.s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        print(recv_addr)
-        print(send_addr)
         self.s.bind(self.recv_addr)
         self.s.settimeout(timeout)
-
-        self.psize = 1448
-        self.data = []
-        self.size = 0
-        self.last_size = 0
-
-        self.entryID = entryID
-        self.team = team
-        self.hash = ""
 
     def __del__(self):
         self.s.close()
 
     def send(self, message):
-        # self.s.sendto(message.encode(),("127.0.0.1",9801))
         self.s.sendto(message.encode(), self.send_addr)
 
     def recv(self):
@@ -47,7 +34,8 @@ class ReliableUDP:
         # except socket.timeout:
         #     raise TimeoutError("Timed out")
 
-    def get_retry(self, message, tries=5):
+    def get(self, message, tries=5):
+        self.flush_buffer()
         self.send(message)
         count = 0
         reply = ""
@@ -66,20 +54,46 @@ class ReliableUDP:
             return
         return reply
 
-    def flush_recv(self):
+    def flush_buffer(self):
+        """Should be called after ample time is given,
+        for expected leftover requests to pile up and be flushed"""
         self.s.setblocking(False)
         while True:
             try:
-                self.s.recvfrom(2048)
-            except:
+                d = self.s.recvfrom(2048)
+                print("Flushed once")
+            except BlockingIOError:
+                print("All flushed!\n")
                 break
         self.s.settimeout(self.timeout)
 
+
+class UDPStream:
+    def __init__(
+        self,
+        send_addr,
+        entryID,
+        team,
+        recv_addr=None,
+        timeout=2,
+    ):
+        self.udp = ReliableUDP(send_addr, recv_addr, timeout)
+        self.s = self.udp.s
+
+        self.psize = 1448
+        self.data = []
+        self.size = 0
+        self.last_size = 0
+
+        self.entryID = entryID
+        self.team = team
+        self.hash = ""
+
     def getsize(self):
-        response = self.get_retry("SendSize\nReset\n\n")
+        response = self.udp.get("SendSize\nReset\n\n")
         if response:
             self.size = int(response.split()[1])
-            self.data = [None] * (self.size // self.psize + 1)
+            self.data = [None] * math.ceil(self.size / self.psize)
             print(f"Response: \n{response}")
             # CHECK here
 
@@ -92,7 +106,7 @@ class ReliableUDP:
 
     def submit(self):
         message = f"Submit: {self.entryID}@{self.team}\nMD5: {self.hash}\n\n"
-        output = (self.get_retry(message)).split()
+        output = (self.udp.get(message)).split()
         if output[1] == "true":
             print(
                 f"Submission Success\nTotal time taken: {output[3]}\nPenalty occured: {output[5]}"
@@ -101,15 +115,17 @@ class ReliableUDP:
             print("Submission Failed")
 
 
-# test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-# test_sock.bind(("127.0.0.1",9804))
-# test_sock.sendto("SendSize\nReset\n\n".encode(),("127.0.0.1",9801))
-# result = test_sock.recvfrom(2048)
-# print(result)
-udp = ReliableUDP(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
-udp.getsize()
-time.sleep(5)
-udp.send("Offset: 0\nNumBytes: 1448\n\n")
-udp.send("Offset: 1448\nNumBytes: 1448\n\n")
-print(udp.recv())
-print(udp.recv())
+def main():
+    stream = UDPStream(("127.0.0.1", 9801), None, None, ("127.0.0.1", 9803))
+    stream.getsize()
+    time.sleep(1)
+    stream.udp.send("Offset: 0\nNumBytes: 1448\n\n")
+    stream.udp.send("Offset: 1448\nNumBytes: 1448\n\n")
+    time.sleep(0.1)
+    stream.udp.flush_buffer()
+    stream.udp.send("Offset: 1448\nNumBytes: 1448\n\n")
+    print(stream.udp.recv())
+
+
+if __name__ == "__main__":
+    main()

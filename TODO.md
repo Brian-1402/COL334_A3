@@ -5,7 +5,10 @@
 - Make the sending and receiving threads.
 
 - check if UDP also has the same issue of data coming halfway and requiring recv in a loop to get complete data, like in TCP in A2.
+
   - Ans: apparently it doesn't? sort of read somewhere that for TCP specifically it is a stream based protocol and not packet based, so packets would be split up etc etc. So it could imply the opposite for UDP, need to confirm.
+
+- deque implementation for sending pending requests.
 
 ## Possible code structure ideas:
 
@@ -15,7 +18,7 @@
 
 #### Extra functions for ReliableUDP:
 
-- message_id(), reponse_id().
+- message_id(), response_id().
 
   - These are used by the ReliableUDP class to match messages with responses. They both should return the same data value which can be equated.
   - _These will be needed for the assignment anyways._
