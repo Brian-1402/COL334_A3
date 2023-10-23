@@ -105,8 +105,14 @@ class UDPStream:
         message_list = message.split("\n")
         parse_dict["Offset"] = int((message_list[0].split())[1])
         parse_dict["NumBytes"] = int((message_list[1].split())[1])
+        is_squished = False
+        data_start_offset = 0 #Tells where the data starts in message_list -> for the case of squished and non-squished
         if len(message_list)>3:
-            parse_dict["Data"] = "\n".join(message_list[3:])
+            if message_list[2]=="Squished" and message_list[3]=="":
+                is_squished = True
+                data_start_offset+=1
+            parse_dict["Squished"] = is_squished
+            parse_dict["Data"] = "\n".join(message_list[3+data_start_offset:])
         return parse_dict
 
     def produce_hash(self):
@@ -143,7 +149,8 @@ def test_parse():
     stream.getsize()
     time.sleep(1)
     stream.udp.send("Offset: 1448\nNumBytes: 1448\n\n")
-    message = stream.udp.recv()
+    message = stream.udp.recv() #For Testing general messages (wont be squished cos only one message)
+    # message = "Offset: 0\nNumbytes: 1448\nSquished\n\nblahblahblah\nblahblah\nhello" #For Testing squished
     print(stream.parse(message))
     print(stream.parse(message)["Data"])
     print(len(stream.parse(message)["Data"]))
