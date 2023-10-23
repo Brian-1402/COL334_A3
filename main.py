@@ -114,8 +114,14 @@ class UDPStream:
         message_list = message.split("\n")
         parse_dict["Offset"] = int((message_list[0].split())[1])
         parse_dict["NumBytes"] = int((message_list[1].split())[1])
-        if len(message_list) > 3:
-            parse_dict["Data"] = "\n".join(message_list[3:])
+        is_squished = False
+        data_start_offset = 0 #Tells where the data starts in message_list -> for the case of squished and non-squished
+        if len(message_list)>3:
+            if message_list[2]=="Squished" and message_list[3]=="":
+                is_squished = True
+                data_start_offset+=1
+            parse_dict["Squished"] = is_squished
+            parse_dict["Data"] = "\n".join(message_list[3+data_start_offset:])
         return parse_dict
 
     def produce_hash(self):
