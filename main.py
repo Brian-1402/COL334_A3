@@ -97,6 +97,9 @@ class UDPStream:
         self.recv_time_hist = []
         self.start_time = 0
 
+        self.RTT = 0.02
+        self.burst_size = 5
+
     def __del__(self):
         del self.udp
 
@@ -115,13 +118,13 @@ class UDPStream:
         parse_dict["Offset"] = int((message_list[0].split())[1])
         parse_dict["NumBytes"] = int((message_list[1].split())[1])
         is_squished = False
-        data_start_offset = 0 #Tells where the data starts in message_list -> for the case of squished and non-squished
-        if len(message_list)>3:
-            if message_list[2]=="Squished" and message_list[3]=="":
+        data_start_offset = 0  # Tells where the data starts in message_list -> for the case of squished and non-squished
+        if len(message_list) > 3:
+            if message_list[2] == "Squished" and message_list[3] == "":
                 is_squished = True
-                data_start_offset+=1
+                data_start_offset += 1
             parse_dict["Squished"] = is_squished
-            parse_dict["Data"] = "\n".join(message_list[3+data_start_offset:])
+            parse_dict["Data"] = "\n".join(message_list[3 + data_start_offset :])
         return parse_dict
 
     def produce_hash(self):
@@ -147,37 +150,54 @@ class UDPStream:
 
     def send_thread(self):
         self.stop = False
-        i = 0
+        i0 = 0
         passes = 0
         while not self.stop:
-            if not self.data[i]:
-                numbytes = self.psize
+            burst_count = 0
+
+            while burst_count < self.burst_size:  # math.floor(self.burst_size)
+                i = i0 % (len(self.data))
+
+                if not self.data[i]:
+                    numbytes = self.psize
+                    if i == len(self.data) - 1:
+                        numbytes = self.size % self.psize
+                    message = f"Offset: {self.psize*i}\nNumBytes: {numbytes}\n\n"
+
+                    print(f"Sending {i}")
+                    self.send_time_hist.append(time.time() - self.start_time)
+                    self.send_hist.append(self.psize * i)
+                    self.udp.send(message)
+                    burst_count += 1
+
                 if i == len(self.data) - 1:
-                    numbytes = self.size % self.psize
-                message = f"Offset: {self.psize*i}\nNumBytes: {numbytes}\n\n"
+                    passes += 1
+                    break
+                i0 += 1
+                # After each pass, give it RTT time to receive any pending requests
+                # Becomes more relevant in later passes when only few packets are remaining to receive
+                # print("i")
 
-                time.sleep(0.001)
-                print(f"Sending {i}")
-                self.send_time_hist.append(time.time() - self.start_time)
-                self.send_hist.append(self.psize * i)
-                self.udp.send(message)
-
-            if i == len(self.data) - 1:
+            time.sleep(self.RTT)
+            # if above time delay is long enough for all packets to receive,
+            # then below code will ensure no duplicate sent packets.
+            if i0 % len(self.data) == len(self.data) - 1:
                 if None not in self.data:
                     self.stop = True
                     break
-
-                i = 0
-                passes += 1
-                continue
-
-            i += 1
+                elif self.stop == True:
+                    raise RuntimeError
+                #! CHECK FOR MORE LOGICAL ISSUES TO ADD AS ELIFs
+                else:
+                    i0 += 1
+        print("Sending thread stopped")
 
     def recv_thread(self):
-        # self.s.settimeout(2)
+        self.s.settimeout(2 * self.RTT)
         # self.s.setblocking(False)
         self.stop = False
         count = 0
+        retry = 0
         while not self.stop:
             if count > len(self.data):
                 if None not in self.data:
@@ -185,21 +205,28 @@ class UDPStream:
                     break
             try:
                 response = self.udp.recv()
-            except Exception as e:
-                if Exception == socket.timeout:
+            except socket.timeout:
+                print("Timed out")
+                if None not in self.data:
                     self.stop = True
                     break
                 else:
-                    continue
+                    if retry < 20:
+                        retry += 1
+                        continue
+                    else:
+                        raise ConnectionError
+            retry = 0
             d = self.parse(response)
             print(f"Received {d['Offset']//self.psize}")
             if d["NumBytes"] != len(d["Data"]):
                 continue
-
+            # burst_size+= 1/
             self.recv_time_hist.append(time.time() - self.start_time)
             self.recv_hist.append(d["Offset"])
             self.data[d["Offset"] // self.psize] = d["Data"]
             count += 1
+        print("Receive thread ended")
 
     def bi_stream(self):
         st = threading.Thread(target=self.send_thread, daemon=True)
@@ -209,6 +236,7 @@ class UDPStream:
         st.start()
         rt.start()
         st.join()
+        # time.sleep(1)
         rt.join()
 
 
@@ -234,7 +262,7 @@ def execute_bi_stream():
     plt.legend(loc="best")
     plt.xlabel("time")
     plt.ylabel("offset")
-    plt.show()
+    # plt.show()
 
 
 def main():
