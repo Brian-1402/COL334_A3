@@ -13,8 +13,8 @@ class ReliableUDP:
     ):
         self.send_addr = send_addr
         if not recv_addr:
-            self.recv_addr = (socket.gethostbyname_ex(socket.gethostname())[2][-1], 0)
-            # self.recv_addr = ("0.0.0.0", 0)
+            # self.recv_addr = (socket.gethostbyname_ex(socket.gethostname())[2][-1], 0)
+            self.recv_addr = ("0.0.0.0", 0)
         else:
             self.recv_addr = recv_addr
         self.timeout = timeout
@@ -35,7 +35,9 @@ class ReliableUDP:
         return reply.decode()
 
     def get(self, message, tries=5):
-        self.flush_buffer()
+        """Sends message which expects an immediate reply.
+        Tries to retry few times if socket times out."""
+        self.flush_buffer()  # clears buffer to make sure this doesn't receive some previous pending packet.
         self.send(message)
         count = 0
         reply = ""
@@ -53,7 +55,8 @@ class ReliableUDP:
         return reply.decode()
 
     def flush_buffer(self):
-        """Should be called after ample time is given,
+        """Clears any pending packets stored in the receiving buffer.
+        Should be called after ample time is given,
         for expected leftover requests to pile up and be flushed"""
         self.s.setblocking(False)
         flushed = 0
@@ -76,10 +79,9 @@ class UDPStream:
         entryID,
         team,
         recv_addr=None,
-        timeout=5,
+        timeout=2,
     ):
         self.udp = ReliableUDP(send_addr, recv_addr, timeout)
-        # self.udp_s = ReliableUDP(send_addr, ("0.0.0.0", 0), timeout)
         self.s = self.udp.s
 
         self.psize = 1448
@@ -93,11 +95,11 @@ class UDPStream:
 
         # Only for plotting
         self.send_hist = []
+        self.send_time_hist = []
         self.recv_hist = []
+        self.recv_time_hist = []
         self.burst_hist = []
         self.burst_time_hist = []
-        self.send_time_hist = []
-        self.recv_time_hist = []
         self.squish_hist = []
         self.squish_time_hist = []
         self.start_time = 0
@@ -172,7 +174,7 @@ class UDPStream:
 
             # Calculating burst size, AIMD
             if (
-                len(self.burst_dict) > 1
+                len(self.burst_dict) > 0
             ):  # This implies that all the packets sent in a particular burst was not recieved, hence MD
                 # print("Entered")
                 burst_size = int(max(burst_size * 0.75, 1))
@@ -324,7 +326,7 @@ def plot_bursts(stream):
         zorder=1,
         marker="o",
     )
-    plt.legend(loc="best")
+    # plt.legend(loc="best")
     ax1.set_xlabel("Time")
     ax1.set_ylabel("Burst size", color=color)
     ax1.set(ylim=(0, 10))
@@ -347,9 +349,14 @@ def plot_bursts(stream):
 
 
 def execute_bi_stream():
-    stream = UDPStream(("127.0.0.1", 9802), "2021CS50609", "Team", ("127.0.0.1", 9803))
+    # stream = UDPStream(("127.0.0.1", 9802), "2021CS50609", "Team", ("127.0.0.1", 9803))
+    stream = UDPStream(
+        ("192.168.154.180", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803)
+    )
     # stream = UDPStream(("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803))
     # stream = UDPStream(("10.17.7.134", 9802), "2021CS50609", "Team", ("0.0.0.0", 9803))
+    print(stream.udp.recv_addr)
+    print(stream.udp.send_addr)
     stream.getsize()
     stream.bi_stream()
     stream.submit()
