@@ -91,14 +91,21 @@ class UDPStream:
         self.team = team
         self.hash = ""
 
+        # Only for plotting
         self.send_hist = []
         self.recv_hist = []
+        self.burst_hist = []
+        self.burst_time_hist = []
         self.send_time_hist = []
         self.recv_time_hist = []
+        self.squish_hist = []
+        self.squish_time_hist = []
         self.start_time = 0
 
-        self.RTT = 0.02
-        self.burst_size = 5
+        self.burst_dict = dict()
+        self.RTT = 0.1
+        self.alpha = 0.8
+        # self.burst_size = 5
 
     def __del__(self):
         del self.udp
@@ -152,10 +159,34 @@ class UDPStream:
         self.stop = False
         i0 = 0
         passes = 0
+
+        # Initialising burst parameters
+        burst_size = 1
+        is_exponential = True  # Intially exponential increase of burst size
+
         while not self.stop:
             burst_count = 0
+            # self.burst_time = time.time()
 
-            while burst_count < self.burst_size:  # math.floor(self.burst_size)
+            # * START OF BURST, do burst size calcs here.
+
+            # Calculating burst size, AIMD
+            if (
+                len(self.burst_dict) > 1
+            ):  # This implies that all the packets sent in a particular burst was not recieved, hence MD
+                # print("Entered")
+                burst_size = int(max(burst_size * 0.75, 1))
+                is_exponential = False
+            else:
+                if is_exponential:
+                    burst_size *= 2
+                else:
+                    burst_size += 1
+            self.burst_hist.append(burst_size)
+            self.burst_time_hist.append(time.time() - self.start_time)
+            self.burst_dict = dict()
+
+            while burst_count < burst_size:
                 i = i0 % (len(self.data))
 
                 if not self.data[i]:
@@ -163,12 +194,13 @@ class UDPStream:
                     if i == len(self.data) - 1:
                         numbytes = self.size % self.psize
                     message = f"Offset: {self.psize*i}\nNumBytes: {numbytes}\n\n"
-
-                    print(f"Sending {i}")
+                    print(f"Sending {i},{burst_size}")
                     self.send_time_hist.append(time.time() - self.start_time)
                     self.send_hist.append(self.psize * i)
-                    self.udp.send(message)
                     burst_count += 1
+                    self.burst_dict[self.psize * i] = time.time()
+
+                    self.udp.send(message)
 
                 if i == len(self.data) - 1:
                     passes += 1
@@ -178,7 +210,7 @@ class UDPStream:
                 # Becomes more relevant in later passes when only few packets are remaining to receive
                 # print("i")
 
-            time.sleep(self.RTT)
+            time.sleep(1.5 * self.RTT)
             # if above time delay is long enough for all packets to receive,
             # then below code will ensure no duplicate sent packets.
             if i0 % len(self.data) == len(self.data) - 1:
@@ -217,11 +249,32 @@ class UDPStream:
                     else:
                         raise ConnectionError
             retry = 0
+
+            # * RECEIVED PACKET. Do RTT calcs, removal from burst_dict etc below
             d = self.parse(response)
-            print(f"Received {d['Offset']//self.psize}")
+            if (
+                d["Offset"] in self.burst_dict
+            ):  # This implies packet was recieve before the next burst was sent (i.e. within RTT) -> Use this packet for updation of RTT
+                # print("Hello")
+                sent_time = self.burst_dict[d["Offset"]]
+                self.RTT = (
+                    self.alpha * (time.time() - sent_time) + (1 - self.alpha) * self.RTT
+                )
+                del self.burst_dict[d["Offset"]]
+
+            # If a packet recieved is not in burst_dict, then it implies that this was part of an older burst which took too much time to be returned
+            # Hence we do not consider such a packet for the updation of burst size / RTT but we still use the data recieved from this packet
+
+            print(f"Received {d['Offset']//self.psize}", end="")
+            if d["Squished"]:
+                print(", SQUISHED!!!")
+                self.squish_hist.append(1)
+            else:
+                self.squish_hist.append(0)
+            print()
+            self.squish_time_hist.append(time.time() - self.start_time)
             if d["NumBytes"] != len(d["Data"]):
-                continue
-            # burst_size+= 1/
+                continue  # Numbytes != size of data obtained -> Corruption in data sent/recieved
             self.recv_time_hist.append(time.time() - self.start_time)
             self.recv_hist.append(d["Offset"])
             self.data[d["Offset"] // self.psize] = d["Data"]
@@ -240,11 +293,7 @@ class UDPStream:
         rt.join()
 
 
-def execute_bi_stream():
-    stream = UDPStream(("127.0.0.1", 9801), "2021CS50609", "Team", ("127.0.0.1", 9803))
-    stream.getsize()
-    stream.bi_stream()
-    stream.submit()
+def plot_offsets(stream):
     plt.scatter(
         stream.send_time_hist,
         stream.send_hist,
@@ -262,7 +311,50 @@ def execute_bi_stream():
     plt.legend(loc="best")
     plt.xlabel("time")
     plt.ylabel("offset")
-    # plt.show()
+    plt.show()
+
+
+def plot_bursts(stream):
+    fig, ax1 = plt.subplots()
+    color = "tab:blue"
+    ax1.plot(
+        stream.burst_time_hist,
+        stream.burst_hist,
+        color="b",
+        zorder=1,
+        marker="o",
+    )
+    plt.legend(loc="best")
+    ax1.set_xlabel("Time")
+    ax1.set_ylabel("Burst size", color=color)
+    ax1.set(ylim=(0, 10))
+    ax2 = ax1.twinx()
+    color = "tab:orange"
+    ax2.plot(
+        stream.squish_time_hist,
+        stream.squish_hist,
+        color="orange",
+        zorder=1,
+        linewidth=5,
+    )
+    # plt.legend(loc="best")
+    # ax2.set_xlabel("Time")
+    ax2.set_ylabel("Squish", color=color)
+    ax2.set(ylim=(-0.1, 1.1))
+    fig.tight_layout()
+
+    plt.show()
+
+
+def execute_bi_stream():
+    stream = UDPStream(("127.0.0.1", 9802), "2021CS50609", "Team", ("127.0.0.1", 9803))
+    # stream = UDPStream(("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803))
+    # stream = UDPStream(("10.17.7.134", 9802), "2021CS50609", "Team", ("0.0.0.0", 9803))
+    stream.getsize()
+    stream.bi_stream()
+    stream.submit()
+    plot_offsets(stream)
+    plot_bursts(stream)
 
 
 def main():
