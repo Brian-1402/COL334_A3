@@ -364,17 +364,15 @@ def execute_bi_stream():
     #     ("0.0.0.0", 9803),
     #     const_rate=True,
     # )
-    stream = UDPStream(
-        ("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803), True
-    )
+    stream = UDPStream(("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803))
     # stream = UDPStream(("10.17.7.134", 9802), "2021CS50609", "Team", ("0.0.0.0", 9803))
     print(stream.udp.recv_addr)
     print(stream.udp.send_addr)
     stream.getsize()
     stream.bi_stream()
     stream.submit()
-    plot_offsets(stream)
     plot_bursts(stream)
+    plot_offsets(stream)
 
 
 def main():
