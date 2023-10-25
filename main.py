@@ -79,6 +79,7 @@ class UDPStream:
         entryID,
         team,
         recv_addr=None,
+        const_rate=False,
         timeout=2,
     ):
         self.udp = ReliableUDP(send_addr, recv_addr, timeout)
@@ -108,6 +109,7 @@ class UDPStream:
         self.RTT = 0.1
         self.alpha = 0.8
         # self.burst_size = 5
+        self.const_rate = const_rate
 
     def __del__(self):
         del self.udp
@@ -165,7 +167,8 @@ class UDPStream:
         # Initialising burst parameters
         burst_size = 1
         is_exponential = True  # Intially exponential increase of burst size
-
+        if self.const_rate:
+            is_exponential = False
         while not self.stop:
             burst_count = 0
             # self.burst_time = time.time()
@@ -177,8 +180,12 @@ class UDPStream:
                 len(self.burst_dict) > 0
             ):  # This implies that all the packets sent in a particular burst was not recieved, hence MD
                 # print("Entered")
-                burst_size = int(max(burst_size * 0.75, 1))
+                if self.const_rate:
+                    burst_size = int(max(burst_size - 1, 1))
+                else:
+                    burst_size = int(max(burst_size * 0.75, 1))
                 is_exponential = False
+
             else:
                 if is_exponential:
                     burst_size *= 2
@@ -351,9 +358,15 @@ def plot_bursts(stream):
 def execute_bi_stream():
     # stream = UDPStream(("127.0.0.1", 9802), "2021CS50609", "Team", ("127.0.0.1", 9803))
     # stream = UDPStream(
-    #     ("192.168.154.180", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803)
+    #     ("192.168.154.180", 9801),
+    #     "2021CS50609",
+    #     "Team",
+    #     ("0.0.0.0", 9803),
+    #     const_rate=True,
     # )
-    stream = UDPStream(("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803))
+    stream = UDPStream(
+        ("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803), True
+    )
     # stream = UDPStream(("10.17.7.134", 9802), "2021CS50609", "Team", ("0.0.0.0", 9803))
     print(stream.udp.recv_addr)
     print(stream.udp.send_addr)
