@@ -218,88 +218,96 @@ class UDPStream:
                 # After each pass, give it RTT time to receive any pending requests
                 # Becomes more relevant in later passes when only few packets are remaining to receive
                 # print("i")
-
-            time.sleep(1.5 * self.RTT)
+            recv_start_time = time.time()
+            # time.sleep(1.5 * self.RTT)
             # if above time delay is long enough for all packets to receive,
             # then below code will ensure no duplicate sent packets.
-            if i0 % len(self.data) == len(self.data) - 1:
+            # if i0 % len(self.data) == len(self.data) - 1:
+            if passes > 1:
                 if None not in self.data:
                     self.stop = True
                     break
-                elif self.stop == True:
-                    raise RuntimeError
+                # elif self.stop == True:
+                #     raise RuntimeError
                 #! CHECK FOR MORE LOGICAL ISSUES TO ADD AS ELIFs
                 else:
                     i0 += 1
-        print("Sending thread stopped")
+            # print("Sending thread stopped")
 
-    def recv_thread(self):
-        self.s.settimeout(2 * self.RTT)
-        # self.s.setblocking(False)
-        self.stop = False
-        count = 0
-        retry = 0
-        while not self.stop:
-            if count > len(self.data):
-                if None not in self.data:
-                    self.stop = True
-                    break
-            try:
-                response = self.udp.recv()
-            except socket.timeout:
-                print("Timed out")
-                if None not in self.data:
-                    self.stop = True
-                    break
-                else:
-                    if retry < 20:
-                        retry += 1
-                        continue
-                    else:
-                        raise ConnectionError
+            # def recv_thread(self):
+            self.s.settimeout(1.5 * self.RTT)
+            # self.s.setblocking(False)
+            self.stop = False
+            count = 0
             retry = 0
+            while not self.stop:
+                if (time.time() - recv_start_time) > 1.5 * self.RTT:
+                    break
 
-            # * RECEIVED PACKET. Do RTT calcs, removal from burst_dict etc below
-            d = self.parse(response)
-            if (
-                d["Offset"] in self.burst_dict
-            ):  # This implies packet was recieve before the next burst was sent (i.e. within RTT) -> Use this packet for updation of RTT
-                # print("Hello")
-                sent_time = self.burst_dict[d["Offset"]]
-                self.RTT = (
-                    self.alpha * (time.time() - sent_time) + (1 - self.alpha) * self.RTT
+                if count > len(self.data):
+                    if None not in self.data:
+                        self.stop = True
+                        break
+                try:
+                    response = self.udp.recv()
+                except socket.timeout:
+                    print("Timed out")
+                    if None not in self.data:
+                        self.stop = True
+                        break
+                    else:
+                        continue
+                        # if retry < 20:
+                        #     retry += 1
+                        #     continue
+                        # else:
+                        #     raise ConnectionError
+                # retry = 0
+                self.s.settimeout(self.RTT)
+                # * RECEIVED PACKET. Do RTT calcs, removal from burst_dict etc below
+                d = self.parse(response)
+                if (
+                    d["Offset"] in self.burst_dict
+                ):  # This implies packet was recieve before the next burst was sent (i.e. within RTT) -> Use this packet for updation of RTT
+                    # print("Hello")
+                    sent_time = self.burst_dict[d["Offset"]]
+                    self.RTT = (
+                        self.alpha * (time.time() - sent_time)
+                        + (1 - self.alpha) * self.RTT
+                    )
+                    del self.burst_dict[d["Offset"]]
+
+                # If a packet recieved is not in burst_dict, then it implies that this was part of an older burst which took too much time to be returned
+                # Hence we do not consider such a packet for the updation of burst size / RTT but we still use the data recieved from this packet
+
+                print(
+                    f"Received {d['Offset']//self.psize}, RTT: {self.RTT: .4f}", end=""
                 )
-                del self.burst_dict[d["Offset"]]
-
-            # If a packet recieved is not in burst_dict, then it implies that this was part of an older burst which took too much time to be returned
-            # Hence we do not consider such a packet for the updation of burst size / RTT but we still use the data recieved from this packet
-
-            print(f"Received {d['Offset']//self.psize}, RTT: {self.RTT: .4f}", end="")
-            if d["Squished"]:
-                print(", SQUISHED!!!")
-                self.squish_hist.append(1)
-            else:
-                self.squish_hist.append(0)
-            print()
-            self.squish_time_hist.append(time.time() - self.start_time)
-            if d["NumBytes"] != len(d["Data"]):
-                continue  # Numbytes != size of data obtained -> Corruption in data sent/recieved
-            self.recv_time_hist.append(time.time() - self.start_time)
-            self.recv_hist.append(d["Offset"])
-            self.data[d["Offset"] // self.psize] = d["Data"]
-            count += 1
-        print("Receive thread ended")
+                if d["Squished"]:
+                    print(", SQUISHED!!!")
+                    self.squish_hist.append(1)
+                else:
+                    self.squish_hist.append(0)
+                print()
+                self.squish_time_hist.append(time.time() - self.start_time)
+                if d["NumBytes"] != len(d["Data"]):
+                    continue  # Numbytes != size of data obtained -> Corruption in data sent/recieved
+                self.recv_time_hist.append(time.time() - self.start_time)
+                self.recv_hist.append(d["Offset"])
+                self.data[d["Offset"] // self.psize] = d["Data"]
+                count += 1
+            # print("Receive thread ended")
 
     def bi_stream(self):
         st = threading.Thread(target=self.send_thread, daemon=True)
-        rt = threading.Thread(target=self.recv_thread, daemon=True)
+        # rt = threading.Thread(target=self.recv_thread, daemon=True)
         self.udp.flush_buffer()
         self.start_time = time.time()
         st.start()
-        rt.start()
+        # rt.start()
         st.join()
         # time.sleep(1)
-        rt.join()
+        # rt.join()
 
 
 def plot_offsets(stream):
@@ -356,7 +364,7 @@ def plot_bursts(stream):
 
 
 def execute_bi_stream():
-    # stream = UDPStream(("127.0.0.1", 9802), "2021CS50609", "Team", ("127.0.0.1", 9803))
+    # stream = UDPStream(("127.0.0.1", 9801), "2021CS50609", "Team", ("127.0.0.1", 9803))
     # stream = UDPStream(
     #     ("192.168.154.180", 9801),
     #     "2021CS50609",
@@ -365,7 +373,7 @@ def execute_bi_stream():
     #     const_rate=True,
     # )
     stream = UDPStream(
-        ("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803), True
+        ("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803), False
     )
     # stream = UDPStream(("10.17.7.134", 9802), "2021CS50609", "Team", ("0.0.0.0", 9803))
     print(stream.udp.recv_addr)
