@@ -356,7 +356,7 @@ def plot_bursts(stream):
 
 
 def execute_bi_stream():
-    # stream = UDPStream(("127.0.0.1", 9802), "2021CS50609", "Team", ("127.0.0.1", 9803))
+    stream = UDPStream(("127.0.0.1", 9801), "2021CS50609", "Team", ("127.0.0.1", 9803))
     # stream = UDPStream(
     #     ("192.168.154.180", 9801),
     #     "2021CS50609",
