@@ -267,7 +267,7 @@ class UDPStream:
             # If a packet recieved is not in burst_dict, then it implies that this was part of an older burst which took too much time to be returned
             # Hence we do not consider such a packet for the updation of burst size / RTT but we still use the data recieved from this packet
 
-            print(f"Received {d['Offset']//self.psize}", end="")
+            print(f"Received {d['Offset']//self.psize}, RTT: {self.RTT: .4f}", end="")
             if d["Squished"]:
                 print(", SQUISHED!!!")
                 self.squish_hist.append(1)
@@ -350,10 +350,10 @@ def plot_bursts(stream):
 
 def execute_bi_stream():
     # stream = UDPStream(("127.0.0.1", 9802), "2021CS50609", "Team", ("127.0.0.1", 9803))
-    stream = UDPStream(
-        ("192.168.154.180", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803)
-    )
-    # stream = UDPStream(("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803))
+    # stream = UDPStream(
+    #     ("192.168.154.180", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803)
+    # )
+    stream = UDPStream(("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803))
     # stream = UDPStream(("10.17.7.134", 9802), "2021CS50609", "Team", ("0.0.0.0", 9803))
     print(stream.udp.recv_addr)
     print(stream.udp.send_addr)
