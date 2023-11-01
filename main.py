@@ -169,6 +169,8 @@ class UDPStream:
         is_exponential = True  # Intially exponential increase of burst size
         if self.const_rate:
             is_exponential = False
+        burst_wait = 0
+        burst_wait_counter = 0
         while not self.stop:
             burst_count = 0
             # self.burst_time = time.time()
@@ -183,7 +185,7 @@ class UDPStream:
                 if self.const_rate:
                     burst_size = int(max(burst_size - 1, 1))
                 else:
-                    burst_size = int(max(burst_size * 0.75, 1))
+                    burst_size = int(max(burst_size * 0.5, 1))
                 is_exponential = False
 
             else:
@@ -191,6 +193,13 @@ class UDPStream:
                     burst_size *= 2
                 else:
                     burst_size += 1
+            if burst_wait > 0:
+                if (math.log2(burst_wait_counter) + 1) % 6 == 0:
+                    burst_size = 1
+                else:
+                    print("BURST SKIPPED!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                    burst_size = 0
+                    burst_wait_counter -= 1
             self.burst_hist.append(burst_size)
             self.burst_time_hist.append(time.time() - self.start_time)
             self.burst_dict = dict()
@@ -296,6 +305,14 @@ class UDPStream:
                 self.recv_hist.append(d["Offset"])
                 self.data[d["Offset"] // self.psize] = d["Data"]
                 count += 1
+
+            if count == 0:
+                if burst_wait_counter == 0:
+                    burst_wait = 1 if burst_wait == 0 else burst_wait * 2
+                    burst_wait_counter = burst_wait
+            else:
+                burst_wait = burst_wait_counter = 0
+
             # print("Receive thread ended")
 
     def bi_stream(self):
@@ -364,7 +381,7 @@ def plot_bursts(stream):
 
 
 def execute_bi_stream():
-    # stream = UDPStream(("127.0.0.1", 9801), "2021CS50609", "Team", ("127.0.0.1", 9803))
+    stream = UDPStream(("127.0.0.1", 9802), "2021CS50609", "Team", ("127.0.0.1", 9803))
     # stream = UDPStream(
     #     ("192.168.154.180", 9801),
     #     "2021CS50609",
@@ -372,9 +389,9 @@ def execute_bi_stream():
     #     ("0.0.0.0", 9803),
     #     const_rate=True,
     # )
-    stream = UDPStream(
-        ("10.17.7.134", 9801), "2021CS50609", "Team", ("0.0.0.0", 9803), False
-    )
+    # stream = UDPStream(
+    #     ("10.17.51.115", 9802), "2021CS50609", "Team", ("0.0.0.0", 9803), False
+    # )
     # stream = UDPStream(("10.17.7.134", 9802), "2021CS50609", "Team", ("0.0.0.0", 9803))
     print(stream.udp.recv_addr)
     print(stream.udp.send_addr)
