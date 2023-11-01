@@ -82,6 +82,10 @@ class UDPStream:
         const_rate=False,
         timeout=2,
     ):
+        if send_addr[0]=="127.0.0.1":
+            self.is_local = True
+        else:
+            self.is_local = False
         self.udp = ReliableUDP(send_addr, recv_addr, timeout)
         self.s = self.udp.s
 
@@ -218,8 +222,10 @@ class UDPStream:
                 # After each pass, give it RTT time to receive any pending requests
                 # Becomes more relevant in later passes when only few packets are remaining to receive
                 # print("i")
-
-            time.sleep(1.5 * self.RTT)
+            if self.is_local:
+                time.sleep(0.02)
+            else:
+                time.sleep(1.5 * self.RTT)
             # if above time delay is long enough for all packets to receive,
             # then below code will ensure no duplicate sent packets.
             if i0 % len(self.data) == len(self.data) - 1:
